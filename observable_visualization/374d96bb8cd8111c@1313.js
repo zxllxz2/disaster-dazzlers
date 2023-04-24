@@ -26,10 +26,6 @@ function _9(AWS,localStorage){return(
 AWS.config.credentials = new AWS.Credentials(localStorage["accessKeyId"], localStorage["secretAccessKey"], localStorage['sessionToken'])
 )}
 
-function _10(AWS){return(
-AWS.config.region = "us-east-1"
-)}
-
 function _auth_AWS(AWS)
 {
   AWS.config.credentials;
@@ -42,41 +38,33 @@ function _s3(auth_AWS){return(
 new auth_AWS.S3({apiVersion: '2006-03-01'})
 )}
 
-function _bucketParams(){return(
-{
-    Bucket : 'wwu-incidents',
-    Delimiter : '/', 
-    Prefix : ''
-  }
-)}
-
 function _objectParams(){return(
 {
-    Bucket : 'wwu-incidents',
-    Key : 'incident_census_join'
-  }
+  Bucket: 'wwu-incidents',
+  Key: 'incident_census_join',
+  Expires: 60*5
+}
 )}
 
-function _loaded_S3_object(s3,objectParams){return(
-s3.getObject(objectParams).promise()
+function _incident_obj(){return(
+{
+  Bucket: 'tobyzhu-incidents',
+  Key: 'nfd_incidents_xd_seg.parquet',
+  Expires: 60*5
+}
 )}
 
-function _available_objects(s3,bucketParams){return(
-s3.listObjects(bucketParams).promise().then((object) => object.Contents)
-)}
-
-function _17(md){return(
+function _14(md){return(
 md`# Visualization`
 )}
 
-function _18(md){return(
+function _15(md){return(
 md`## Prepare Data`
 )}
 
-async function _davidson(FileAttachment)
+async function _davidson(d3,s3,objectParams)
 {
-  let data = await FileAttachment("google://incident_census_join_draw").json()
-  data.features = data.features.filter(d => d.properties.Incident_ID)
+  let data = await d3.json(s3.getSignedUrl('getObject', objectParams))
   data.features.forEach(d => d.properties.time_local = new Date(d.properties.time_local))
   return data
 }
@@ -101,14 +89,15 @@ function _all_days(time_domain){return(
 (time_domain[1]-time_domain[0])/86400000 + 1
 )}
 
-function _db(DuckDBClient,FileAttachment){return(
+function _db(DuckDBClient,getRemoteFile,s3,incident_obj){return(
 DuckDBClient.of({ 
-  incident: FileAttachment("nfd_incidents_xd_seg.parquet")
+  incident: getRemoteFile(s3.getSignedUrl('getObject', incident_obj))
 })
 )}
 
 function _incident_data(__query,db,invalidation){return(
-__query.sql(db,invalidation,"db")`select CAST(strftime('%Y-%m-%d', time_local) AS DATETIME) AS dates, CAST(COUNT(*) AS INT) AS incident_cnt FROM incident group by dates order by dates`
+__query.sql(db,invalidation,"db")`select CAST(strftime('%Y-%m-%d', time_local) AS DATETIME) AS dates, CAST(COUNT(*) AS INT) AS incident_cnt 
+  FROM incident group by dates order by dates`
 )}
 
 function _incident_month(__query,db,invalidation){return(
@@ -151,7 +140,7 @@ function _second_incident_month(incident_month,date_separate){return(
 incident_month.filter(d => d.dates >= date_separate)
 )}
 
-function _34(md){return(
+function _31(md){return(
 md`## Parameters`
 )}
 
@@ -179,7 +168,7 @@ function _bar_height(){return(
 300
 )}
 
-function _41(md){return(
+function _38(md){return(
 md`## Scales and domains`
 )}
 
@@ -251,7 +240,7 @@ function _week_scale(d3,week,bar_height){return(
 d3.scaleBand().domain(week).range([bar_height, 0]).padding(0.2)
 )}
 
-function _57(d3,incident_month_only){return(
+function _54(d3,incident_month_only){return(
 d3.extent(incident_month_only, d => d.incident_cnt)
 )}
 
@@ -277,123 +266,6 @@ d3.scaleLinear().domain([260, 410]).range([0,bar_width])
 
 function _region_resp_scale(d3,bar_width){return(
 d3.scaleLinear().domain([0, 1200]).range([0,bar_width/3*2])
-)}
-
-function _show_bar_width(d3,format_text){return(
-(g,choice) => {
-  if (choice !== 'incident_resp') choice = 'incident_cnt'
-  g.selectAll('rect').on('mouseover', function(e,data_bind) {
-    g.append('text')
-      .classed('note', true)
-      .attr('x', d3.select(this).attr('width'))
-      .attr('y', d3.select(this).attr('y'))
-      .attr('transform', `translate(5,${d3.select(this).attr('height')/2})`)
-      .call(format_text, Math.round(data_bind[choice]), '13px')
-  })
-
-  // when hovering out of a state
-  g.selectAll('rect').on('mouseout', function(e,data_bind) {
-    g.selectAll('.note').remove()
-  })
-}
-)}
-
-function _draw_week(resp_week,week_scale,week,week_resp_scale,bar_height,d3,incident_week_only,week_incident_scale,bar_width,margins,format_text,map_entry){return(
-(week_g, choice) => {
-  if (choice === 'incident_resp') {
-    week_g.selectAll()
-      .data(resp_week)
-      .join("rect")
-        .attr("x", 0)
-        .attr("y", d => week_scale(week[d.dates]))
-        .attr("width", d => week_resp_scale(d[choice]))
-        .attr("height", week_scale.bandwidth() )
-        .attr("fill", "#69b3a2")
-
-    week_g.append('g')
-      .classed('xaxis', true)
-      .attr('transform', `translate(0, ${bar_height})`)
-      .call(d3.axisBottom(week_resp_scale))
-  } else {
-    week_g.selectAll()
-      .data(incident_week_only)
-      .join("rect")
-        .attr("x", 0)
-        .attr("y", d => week_scale(week[d.dates]))
-        .attr("width", d => week_incident_scale(d.incident_cnt))
-        .attr("height", week_scale.bandwidth() )
-        .attr("fill", "#69b3a2")
-  
-    week_g.append('g')
-      .classed('xaxis', true)
-      .attr('transform', `translate(0, ${bar_height})`)
-      .call(d3.axisBottom(week_incident_scale))
-  }
-
-  // draw the y-axis
-  week_g.append('g')
-    .classed('yaxis', true)
-    .call(d3.axisLeft(week_scale).ticks(7))
-
-  week_g.append('text')
-    .attr('transform', `translate(${bar_width/2-20}, ${bar_height + margins.bottom})`)
-    .call(format_text, map_entry+" (day of week)", '14px')
-
-  // add the title
-  week_g.append('text')
-    .attr('transform', `translate(${bar_width/2-20}, ${-margins.top/3})`)
-    .call(format_text, map_entry+" across Nashville, 2017-2021", '15px')
-}
-)}
-
-function _draw_month(resp_month,month12_scale,month,month_resp_scale,bar_height,d3,incident_month_only,month12_incident_scale,bar_width,margins,format_text,map_entry){return(
-(month_g,choice) => {
-
-  if (choice === 'incident_resp') {
-    month_g.selectAll()
-      .data(resp_month)
-      .join("rect")
-        .attr("x", 0)
-        .attr("y", d => month12_scale(month[d.dates]))
-        .attr("width", d => month_resp_scale(d[choice]))
-        .attr("height", month12_scale.bandwidth() )
-        .attr("fill", "#69b3a2")
-  
-    // draw the x-axis
-    month_g.append('g')
-      .classed('xaxis', true)
-      .attr('transform', `translate(0, ${bar_height})`)
-      .call(d3.axisBottom(month_resp_scale))
-  } else {
-    month_g.selectAll()
-      .data(incident_month_only)
-      .join("rect")
-        .attr("x", 0)
-        .attr("y", d => month12_scale(month[d.dates]))
-        .attr("width", d => month12_incident_scale(d.incident_cnt))
-        .attr("height", month12_scale.bandwidth() )
-        .attr("fill", "#69b3a2")
-  
-    month_g.append('g')
-      .classed('xaxis', true)
-      .attr('transform', `translate(0, ${bar_height})`)
-      .call(d3.axisBottom(month12_incident_scale))
-  }
-  
-  // draw the y-axis
-  month_g.append('g')
-    .classed('yaxis', true)
-    .call(d3.axisLeft(month12_scale).ticks(12))
-
-  month_g.append('text')
-    .attr('transform', `translate(${bar_width/2-20}, ${bar_height + margins.bottom})`)
-    .call(format_text, map_entry+" (month)", '14px')
-
-  // add the title
-  month_g.append('text')
-    .attr('transform', `translate(${bar_width/2-20}, ${-margins.top/3})`)
-    .call(format_text, map_entry+" across Nashville, 2017-2021", '15px')
-}
 )}
 
 function _time_series(Inputs){return(
@@ -495,11 +367,132 @@ function _plot_view(drawdoc,linked_and_coordinated_views){return(
 drawdoc(linked_and_coordinated_views, 5)
 )}
 
-function _71(plot_view){return(
+function _65(plot_view){return(
 plot_view
 )}
 
-function _72(md){return(
+function _66(md){return(
+md`### Draw bar plots`
+)}
+
+function _draw_month(resp_month,month12_scale,month,month_resp_scale,bar_height,d3,incident_month_only,month12_incident_scale,bar_width,margins,format_text,map_entry){return(
+(month_g,choice) => {
+
+  if (choice === 'incident_resp') {
+    month_g.selectAll()
+      .data(resp_month)
+      .join("rect")
+        .attr("x", 0)
+        .attr("y", d => month12_scale(month[d.dates]))
+        .attr("width", d => month_resp_scale(d[choice]))
+        .attr("height", month12_scale.bandwidth() )
+        .attr("fill", "#69b3a2")
+  
+    // draw the x-axis
+    month_g.append('g')
+      .classed('xaxis', true)
+      .attr('transform', `translate(0, ${bar_height})`)
+      .call(d3.axisBottom(month_resp_scale))
+  } else {
+    month_g.selectAll()
+      .data(incident_month_only)
+      .join("rect")
+        .attr("x", 0)
+        .attr("y", d => month12_scale(month[d.dates]))
+        .attr("width", d => month12_incident_scale(d.incident_cnt))
+        .attr("height", month12_scale.bandwidth() )
+        .attr("fill", "#69b3a2")
+  
+    month_g.append('g')
+      .classed('xaxis', true)
+      .attr('transform', `translate(0, ${bar_height})`)
+      .call(d3.axisBottom(month12_incident_scale))
+  }
+  
+  // draw the y-axis
+  month_g.append('g')
+    .classed('yaxis', true)
+    .call(d3.axisLeft(month12_scale).ticks(12))
+
+  month_g.append('text')
+    .attr('transform', `translate(${bar_width/2-20}, ${bar_height + margins.bottom})`)
+    .call(format_text, map_entry+" (month)", '14px')
+
+  // add the title
+  month_g.append('text')
+    .attr('transform', `translate(${bar_width/2-20}, ${-margins.top/3})`)
+    .call(format_text, map_entry+" across Nashville, 2017-2021", '15px')
+}
+)}
+
+function _draw_week(resp_week,week_scale,week,week_resp_scale,bar_height,d3,incident_week_only,week_incident_scale,bar_width,margins,format_text,map_entry){return(
+(week_g, choice) => {
+  if (choice === 'incident_resp') {
+    week_g.selectAll()
+      .data(resp_week)
+      .join("rect")
+        .attr("x", 0)
+        .attr("y", d => week_scale(week[d.dates]))
+        .attr("width", d => week_resp_scale(d[choice]))
+        .attr("height", week_scale.bandwidth() )
+        .attr("fill", "#69b3a2")
+
+    week_g.append('g')
+      .classed('xaxis', true)
+      .attr('transform', `translate(0, ${bar_height})`)
+      .call(d3.axisBottom(week_resp_scale))
+  } else {
+    week_g.selectAll()
+      .data(incident_week_only)
+      .join("rect")
+        .attr("x", 0)
+        .attr("y", d => week_scale(week[d.dates]))
+        .attr("width", d => week_incident_scale(d.incident_cnt))
+        .attr("height", week_scale.bandwidth() )
+        .attr("fill", "#69b3a2")
+  
+    week_g.append('g')
+      .classed('xaxis', true)
+      .attr('transform', `translate(0, ${bar_height})`)
+      .call(d3.axisBottom(week_incident_scale))
+  }
+
+  // draw the y-axis
+  week_g.append('g')
+    .classed('yaxis', true)
+    .call(d3.axisLeft(week_scale).ticks(7))
+
+  week_g.append('text')
+    .attr('transform', `translate(${bar_width/2-20}, ${bar_height + margins.bottom})`)
+    .call(format_text, map_entry+" (day of week)", '14px')
+
+  // add the title
+  week_g.append('text')
+    .attr('transform', `translate(${bar_width/2-20}, ${-margins.top/3})`)
+    .call(format_text, map_entry+" across Nashville, 2017-2021", '15px')
+}
+)}
+
+function _show_bar_width(d3,format_text){return(
+(g,choice) => {
+  if (choice !== 'incident_resp') choice = 'incident_cnt'
+  g.selectAll('rect').on('mouseover', function(e,data_bind) {
+    g.append('text')
+      .classed('note', true)
+      .attr('x', d3.select(this).attr('width'))
+      .attr('y', d3.select(this).attr('y'))
+      .attr('transform', `translate(5,${d3.select(this).attr('height')/2})`)
+      .call(format_text, Math.round(data_bind[choice]), '13px')
+  })
+
+  // when hovering out of a state
+  g.selectAll('rect').on('mouseout', function(e,data_bind) {
+    g.selectAll('.note').remove()
+  })
+}
+)}
+
+function _70(md){return(
 md`### Draw Map`
 )}
 
@@ -648,7 +641,7 @@ function _state_hover_interaction(d3,width,map_height,format_text,map_entry,davi
 }
 )}
 
-function _77(md){return(
+function _75(md){return(
 md`### Draw temporal plot`
 )}
 
@@ -826,8 +819,22 @@ function _series_brush_interaction(d3,width,temporal_height,color_scale,time_sca
 }
 )}
 
-function _83(md){return(
+function _81(md){return(
 md`## Helper Functions`
+)}
+
+function _getRemoteFile(){return(
+function getRemoteFile(url) {
+  const baseURL = new URL(url);
+  return {
+    file: {
+      name: baseURL.pathname,
+      url: function () {
+        return url;
+      }
+    }
+  };
+}
 )}
 
 function _format_text(d3){return(
@@ -874,11 +881,6 @@ function _month(){return(
 
 export default function define(runtime, observer) {
   const main = runtime.module();
-  function toString() { return this.url; }
-  const fileAttachments = new Map([
-    ["nfd_incidents_xd_seg.parquet", {url: new URL("./files/43e1cb469db40599ca08c2b26328f95b418245743ac3de9f790795a3faf4cbf8c92460dd8586dc61114ef4cd424895dc55518ea3e8115d97e2032e64de72938f.bin", import.meta.url), mimeType: "application/octet-stream", toString}]
-  ]);
-  main.builtin("FileAttachment", runtime.fileAttachments(name => fileAttachments.get(name)));
   main.variable(observer()).define(["md"], _1);
   const child1 = runtime.module(define1);
   main.import("secret", child1);
@@ -894,20 +896,17 @@ export default function define(runtime, observer) {
   main.variable(observer("sessionToken")).define("sessionToken", ["Generators", "viewof sessionToken"], (G, _) => G.input(_));
   main.variable(observer("AWS")).define("AWS", ["require"], _AWS);
   main.variable(observer()).define(["AWS","localStorage"], _9);
-  main.variable(observer()).define(["AWS"], _10);
   main.variable(observer("auth_AWS")).define("auth_AWS", ["AWS"], _auth_AWS);
   main.variable(observer("s3")).define("s3", ["auth_AWS"], _s3);
-  main.variable(observer("bucketParams")).define("bucketParams", _bucketParams);
   main.variable(observer("objectParams")).define("objectParams", _objectParams);
-  main.variable(observer("loaded_S3_object")).define("loaded_S3_object", ["s3","objectParams"], _loaded_S3_object);
-  main.variable(observer("available_objects")).define("available_objects", ["s3","bucketParams"], _available_objects);
-  main.variable(observer()).define(["md"], _17);
-  main.variable(observer()).define(["md"], _18);
-  main.variable(observer("davidson")).define("davidson", ["FileAttachment"], _davidson);
+  main.variable(observer("incident_obj")).define("incident_obj", _incident_obj);
+  main.variable(observer()).define(["md"], _14);
+  main.variable(observer()).define(["md"], _15);
+  main.variable(observer("davidson")).define("davidson", ["d3","s3","objectParams"], _davidson);
   main.variable(observer("davidson_clean")).define("davidson_clean", ["d3","davidson","all_days"], _davidson_clean);
   main.variable(observer("date_separate")).define("date_separate", _date_separate);
   main.variable(observer("all_days")).define("all_days", ["time_domain"], _all_days);
-  main.variable(observer("db")).define("db", ["DuckDBClient","FileAttachment"], _db);
+  main.variable(observer("db")).define("db", ["DuckDBClient","getRemoteFile","s3","incident_obj"], _db);
   main.variable(observer("incident_data")).define("incident_data", ["__query","db","invalidation"], _incident_data);
   main.variable(observer("incident_month")).define("incident_month", ["__query","db","invalidation"], _incident_month);
   main.variable(observer("incident_month_only")).define("incident_month_only", ["__query","db","invalidation"], _incident_month_only);
@@ -918,14 +917,14 @@ export default function define(runtime, observer) {
   main.variable(observer("late_incident")).define("late_incident", ["incident_data","date_separate"], _late_incident);
   main.variable(observer("first_incident_month")).define("first_incident_month", ["incident_month","date_separate"], _first_incident_month);
   main.variable(observer("second_incident_month")).define("second_incident_month", ["incident_month","date_separate"], _second_incident_month);
-  main.variable(observer()).define(["md"], _34);
+  main.variable(observer()).define(["md"], _31);
   main.variable(observer("margins")).define("margins", _margins);
   main.variable(observer("height")).define("height", _height);
   main.variable(observer("map_height")).define("map_height", _map_height);
   main.variable(observer("temporal_height")).define("temporal_height", _temporal_height);
   main.variable(observer("bar_width")).define("bar_width", _bar_width);
   main.variable(observer("bar_height")).define("bar_height", _bar_height);
-  main.variable(observer()).define(["md"], _41);
+  main.variable(observer()).define(["md"], _38);
   main.variable(observer("incident_domain")).define("incident_domain", ["d3","davidson_clean"], _incident_domain);
   main.variable(observer("incident_frq_domain")).define("incident_frq_domain", _incident_frq_domain);
   main.variable(observer("incident_resp_domain")).define("incident_resp_domain", ["d3","davidson_clean"], _incident_resp_domain);
@@ -941,16 +940,13 @@ export default function define(runtime, observer) {
   main.variable(observer("time_scale")).define("time_scale", ["d3","time_domain","width","margins"], _time_scale);
   main.variable(observer("month_scale")).define("month_scale", ["d3","month_domain","width","margins"], _month_scale);
   main.variable(observer("week_scale")).define("week_scale", ["d3","week","bar_height"], _week_scale);
-  main.variable(observer()).define(["d3","incident_month_only"], _57);
+  main.variable(observer()).define(["d3","incident_month_only"], _54);
   main.variable(observer("week_incident_scale")).define("week_incident_scale", ["d3","bar_width","margins"], _week_incident_scale);
   main.variable(observer("month12_scale")).define("month12_scale", ["d3","month","bar_height"], _month12_scale);
   main.variable(observer("month12_incident_scale")).define("month12_incident_scale", ["d3","bar_width"], _month12_incident_scale);
   main.variable(observer("week_resp_scale")).define("week_resp_scale", ["d3","bar_width","margins"], _week_resp_scale);
   main.variable(observer("month_resp_scale")).define("month_resp_scale", ["d3","bar_width"], _month_resp_scale);
   main.variable(observer("region_resp_scale")).define("region_resp_scale", ["d3","bar_width"], _region_resp_scale);
-  main.variable(observer("show_bar_width")).define("show_bar_width", ["d3","format_text"], _show_bar_width);
-  main.variable(observer("draw_week")).define("draw_week", ["resp_week","week_scale","week","week_resp_scale","bar_height","d3","incident_week_only","week_incident_scale","bar_width","margins","format_text","map_entry"], _draw_week);
-  main.variable(observer("draw_month")).define("draw_month", ["resp_month","month12_scale","month","month_resp_scale","bar_height","d3","incident_month_only","month12_incident_scale","bar_width","margins","format_text","map_entry"], _draw_month);
   main.variable(observer("viewof time_series")).define("viewof time_series", ["Inputs"], _time_series);
   main.variable(observer("time_series")).define("time_series", ["Generators", "viewof time_series"], (G, _) => G.input(_));
   main.variable(observer("viewof map_entry")).define("viewof map_entry", ["Inputs"], _map_entry);
@@ -958,19 +954,24 @@ export default function define(runtime, observer) {
   main.variable(observer("linked_and_coordinated_views")).define("linked_and_coordinated_views", ["map_entry","d3","width","height","bar_height","margins","bar_width","map_height","draw_week","draw_month","show_bar_width","draw_map","temporal_height","time_series","draw_time_series2","draw_time_series","format_text","state_hover_interaction","series_brush_interaction"], _linked_and_coordinated_views);
   main.variable(observer("viewof plot_view")).define("viewof plot_view", ["drawdoc","linked_and_coordinated_views"], _plot_view);
   main.variable(observer("plot_view")).define("plot_view", ["Generators", "viewof plot_view"], (G, _) => G.input(_));
-  main.variable(observer()).define(["plot_view"], _71);
-  main.variable(observer()).define(["md"], _72);
+  main.variable(observer()).define(["plot_view"], _65);
+  main.variable(observer()).define(["md"], _66);
+  main.variable(observer("draw_month")).define("draw_month", ["resp_month","month12_scale","month","month_resp_scale","bar_height","d3","incident_month_only","month12_incident_scale","bar_width","margins","format_text","map_entry"], _draw_month);
+  main.variable(observer("draw_week")).define("draw_week", ["resp_week","week_scale","week","week_resp_scale","bar_height","d3","incident_week_only","week_incident_scale","bar_width","margins","format_text","map_entry"], _draw_week);
+  main.variable(observer("show_bar_width")).define("show_bar_width", ["d3","format_text"], _show_bar_width);
+  main.variable(observer()).define(["md"], _70);
   main.variable(observer("map_projection")).define("map_projection", ["d3","width","map_height","davidson"], _map_projection);
   main.variable(observer("path")).define("path", ["d3","map_projection"], _path);
   main.variable(observer("draw_map")).define("draw_map", ["davidson_clean","path","color_scale","d3","color_legend","choose_data_domain","margins","width","map_height","format_text"], _draw_map);
   main.variable(observer("state_hover_interaction")).define("state_hover_interaction", ["d3","width","map_height","format_text","map_entry","davidson","month12_incident_scale","month12_scale","month","region_resp_scale","week_incident_scale","week_scale","week"], _state_hover_interaction);
-  main.variable(observer()).define(["md"], _77);
+  main.variable(observer()).define(["md"], _75);
   main.variable(observer("line_shape")).define("line_shape", ["d3","time_scale","incident_scale"], _line_shape);
   main.variable(observer("draw_time_series")).define("draw_time_series", ["temporal_height","d3","time_scale","incident_scale","width","first_incident","late_incident","line_shape","margins","format_text"], _draw_time_series);
   main.variable(observer("line_shape2")).define("line_shape2", ["d3","month_scale","incident_month_scale"], _line_shape2);
   main.variable(observer("draw_time_series2")).define("draw_time_series2", ["temporal_height","d3","month_scale","incident_month_scale","width","first_incident_month","second_incident_month","line_shape2","format_text","margins"], _draw_time_series2);
   main.variable(observer("series_brush_interaction")).define("series_brush_interaction", ["d3","width","temporal_height","color_scale","time_scale","davidson"], _series_brush_interaction);
-  main.variable(observer()).define(["md"], _83);
+  main.variable(observer()).define(["md"], _81);
+  main.variable(observer("getRemoteFile")).define("getRemoteFile", _getRemoteFile);
   main.variable(observer("format_text")).define("format_text", ["d3"], _format_text);
   main.variable(observer("color_legend")).define("color_legend", ["d3"], _color_legend);
   main.variable(observer("week")).define("week", _week);
