@@ -1,0 +1,14 @@
+{
+  "name": "3bee97b859f4073d",
+  "main": "3bee97b859f4073d@1091.js",
+  "version": "1091.0.0",
+  "homepage": "https://observablehq.com/d/3bee97b859f4073d",
+  "author": {
+    "name": "Vanderbilt Data Visualization Spring 2023",
+    "url": "https://observablehq.com/@vandy-data-vis-spring2023"
+  },
+  "type": "module",
+  "peerDependencies": {
+    "@observablehq/runtime": "4 - 5"
+  }
+}
