@@ -3,6 +3,8 @@
 
 This project aims to analyze the relationship between emergency incidents, demographics, weather, and traffic in Davidson County using an interactive visualization interface.
 
+Read the [project report](./emr-project-report.pdf) for further details and insights.
+
 ## File Description
 
 ### incident-join.ipynb
